@@ -1,0 +1,61 @@
+# ========================================================
+# CINEREC AI - GIT IGNORE SETUP
+# Excludes heavy ML weights, media assets, caches, and secrets.
+# ========================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables & Secret Credentials (CRITICAL!)
+.env
+backend/.env
+.env.local
+.env.*.local
+venv/
+env/
+ENV/
+.venv/
+
+# Large ML Weights & Embeddings (Bypasses GitHub's 100MB Limit)
+# These should be pulled from model registries or mounted volumes
+*.safetensors
+*.bin
+*.pt
+*.pkl
+*.pb
+*.h5
+
+# Local Media Scratch Folders & Pipelines Cuts
+input_videos/
+input_clips/
+extracted_clips/
+subtitles/
+timestamps/
+soundtrack/
+outputs/
+backend/app/scratch/
+
+# Specific binary file formats
+*.mp4
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.srt
+*.tmp
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and Project Editor caches
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

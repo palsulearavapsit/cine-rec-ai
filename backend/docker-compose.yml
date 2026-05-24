@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # 1. MESSAGE BROKER (REDIS)
+  redis:
+    image: redis:7-alpine
+    container_name: cinerec_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  # 2. WEB GATEWAY (FASTAPI)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cinerec_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/workspace
+      # Mount the parent models directory so the API has local access to models context if needed
+      - ../models:/workspace/models
+      - scratch_data:/tmp/cinerec_scratch
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SCRATCH_DIR=/tmp/cinerec_scratch
+    depends_on:
+      - redis
+    restart: always
+
+  # 3. BACKGROUND COMPUTE NODE (CELERY WORKER)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cinerec_worker
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - .:/workspace
+      # Critical mount: worker accesses weights & pickles locally without duplicating file storage
+      - ../models:/workspace/models
+      - scratch_data:/tmp/cinerec_scratch
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - SCRATCH_DIR=/tmp/cinerec_scratch
+    depends_on:
+      - redis
+      - api
+    restart: always
+
+volumes:
+  redis_data:
+  scratch_data:
