@@ -2,7 +2,7 @@
    CINEREC AI - SINGLE PAGE APPLICATION CORE CLIENT DRIVER
    ======================================================== */
 
-const BACKEND_API_URL = "http://localhost:8000/api/v1";
+const BACKEND_API_URL = "http://127.0.0.1:8000/api/v1";
 
 // Global Application State
 let appState = {
@@ -17,12 +17,56 @@ let appState = {
 };
 
 // 1. CONSTRUCTORS & DOM INITIALIZATION
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    await fetchAuthConfig();
     initApp();
     setupEventListeners();
 });
 
-function initApp() {
+async function fetchAuthConfig() {
+    try {
+        const response = await fetch(`${BACKEND_API_URL}/auth/config`);
+        if (!response.ok) throw new Error("Failed to fetch config");
+        const data = await response.json();
+        if (data.supabase_url && data.supabase_anon_key) {
+            appState.supabaseClient = supabase.createClient(data.supabase_url, data.supabase_anon_key);
+        }
+    } catch (e) {
+        console.error("Failed to initialize Supabase client:", e);
+    }
+}
+
+async function autoLoginLocalDeveloper() {
+    try {
+        console.log("Attempting automatic local developer authentication bypass...");
+        const response = await fetch(`${BACKEND_API_URL}/auth/bypass`, {
+            method: "POST"
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const token = data.access_token;
+            const email = data.email;
+            
+            localStorage.setItem("cinerec_token", token);
+            localStorage.setItem("cinerec_user_email", email);
+            
+            appState.authToken = token;
+            appState.user = { email };
+            
+            document.getElementById("user-display").innerText = email;
+            document.getElementById("auth-gateway-btn").innerText = "Log Out";
+            
+            console.log("Local developer automatically authenticated!");
+            await loadProjects();
+            return true;
+        }
+    } catch (e) {
+        console.error("Automatic local developer login failed:", e);
+    }
+    return false;
+}
+
+async function initApp() {
     // Check local storage for cached JWT token
     const cachedToken = localStorage.getItem("cinerec_token");
     const cachedUserEmail = localStorage.getItem("cinerec_user_email");
@@ -53,13 +97,14 @@ function switchAuthTab(tabId) {
     document.querySelectorAll(".auth-modal-tab-content").forEach(el => el.classList.add("hidden"));
     document.querySelectorAll("#auth-modal .tab-btn").forEach(el => el.classList.remove("active"));
     
-    if (tabId === "token") {
+    if (tabId === "demo") {
+        document.getElementById("auth-tab-demo").classList.remove("hidden");
+    } else if (tabId === "token") {
         document.getElementById("auth-tab-token").classList.remove("hidden");
-        event.target.classList.add("active");
-    } else {
+    } else if (tabId === "email") {
         document.getElementById("auth-tab-email").classList.remove("hidden");
-        event.target.classList.add("active");
     }
+    event.target.classList.add("active");
 }
 
 // REST API Request Wrapper with automatic Bearer Token injection
@@ -144,6 +189,157 @@ function setupEventListeners() {
         closeAuthModal();
         
         loadProjects();
+    });
+
+    // Demo Login button click
+    document.getElementById("btn-supabase-demo").addEventListener("click", async () => {
+        const btn = document.getElementById("btn-supabase-demo");
+        btn.disabled = true;
+        btn.innerText = "Launching Demo...";
+        try {
+            // Directly fetch local signed bypass token from FastAPI
+            const response = await fetch(`${BACKEND_API_URL}/auth/bypass`, {
+                method: "POST"
+            });
+            if (!response.ok) throw new Error("Failed to contact FastAPI authentication bypass gateway.");
+            const data = await response.json();
+            
+            const token = data.access_token;
+            localStorage.setItem("cinerec_token", token);
+            localStorage.setItem("cinerec_user_email", "arav@gmail.com");
+            
+            appState.authToken = token;
+            appState.user = { email: "arav@gmail.com" };
+            
+            document.getElementById("user-display").innerText = "arav@gmail.com";
+            document.getElementById("auth-gateway-btn").innerText = "Log Out";
+            
+            closeAuthModal();
+            alert("Logged in as demo user arav@gmail.com successfully!");
+            await loadProjects();
+        } catch (e) {
+            alert(`Demo login failed: ${e.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Launch Demo Session";
+        }
+    });
+
+    // Sign In with email and password
+    document.getElementById("btn-supabase-signin").addEventListener("click", async () => {
+        const email = document.getElementById("auth-email").value.trim();
+        const password = document.getElementById("auth-password").value;
+        
+        if (!email || !password) return alert("Please fill in both email and password.");
+        
+        const btn = document.getElementById("btn-supabase-signin");
+        btn.disabled = true;
+        btn.innerText = "Signing In...";
+        
+        try {
+            // Check if it is the local demo developer login
+            if (email === "arav@gmail.com" && password === "arav") {
+                const response = await fetch(`${BACKEND_API_URL}/auth/bypass`, {
+                    method: "POST"
+                });
+                if (!response.ok) throw new Error("Failed to authenticate demo session");
+                const data = await response.json();
+                
+                const token = data.access_token;
+                localStorage.setItem("cinerec_token", token);
+                localStorage.setItem("cinerec_user_email", "arav@gmail.com");
+                
+                appState.authToken = token;
+                appState.user = { email: "arav@gmail.com" };
+                
+                document.getElementById("user-display").innerText = "arav@gmail.com";
+                document.getElementById("auth-gateway-btn").innerText = "Log Out";
+                closeAuthModal();
+                
+                alert("Logged in as arav@gmail.com successfully!");
+                await loadProjects();
+                return;
+            }
+            
+            if (!appState.supabaseClient) {
+                return alert("Supabase auth client not initialized. Check backend connection.");
+            }
+            
+            const { data, error } = await appState.supabaseClient.auth.signInWithPassword({
+                email: email,
+                password: password,
+            });
+            
+            if (error) throw error;
+            
+            const token = data.session.access_token;
+            localStorage.setItem("cinerec_token", token);
+            localStorage.setItem("cinerec_user_email", email);
+            
+            appState.authToken = token;
+            appState.user = { email };
+            
+            document.getElementById("user-display").innerText = email;
+            document.getElementById("auth-gateway-btn").innerText = "Log Out";
+            closeAuthModal();
+            
+            alert("Signed in successfully!");
+            await loadProjects();
+        } catch (err) {
+            alert(`Sign in failed: ${err.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Log In";
+        }
+    });
+
+    // Sign Up with email and password
+    document.getElementById("btn-supabase-signup").addEventListener("click", async () => {
+        const email = document.getElementById("auth-email").value.trim();
+        const password = document.getElementById("auth-password").value;
+        
+        if (!email || !password) return alert("Please fill in both email and password.");
+        if (password.length < 6) return alert("Password must be at least 6 characters.");
+        if (!appState.supabaseClient) {
+            return alert("Supabase auth client not initialized. Check backend connection.");
+        }
+        
+        const btn = document.getElementById("btn-supabase-signup");
+        btn.disabled = true;
+        btn.innerText = "Signing Up...";
+        
+        try {
+            const { data, error } = await appState.supabaseClient.auth.signUp({
+                email: email,
+                password: password,
+            });
+            
+            if (error) throw error;
+            
+            // Check if confirmation is required
+            if (data.session) {
+                const token = data.session.access_token;
+                localStorage.setItem("cinerec_token", token);
+                localStorage.setItem("cinerec_user_email", email);
+                
+                appState.authToken = token;
+                appState.user = { email };
+                
+                document.getElementById("user-display").innerText = email;
+                document.getElementById("auth-gateway-btn").innerText = "Log Out";
+                closeAuthModal();
+                
+                alert("Sign up successful and logged in!");
+                await loadProjects();
+            } else {
+                alert("Sign up successful! Please check your email for confirmation link.");
+            }
+        } catch (err) {
+            alert(`Sign up failed: ${err.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Sign Up";
+        }
     });
 
     // Switch tabs

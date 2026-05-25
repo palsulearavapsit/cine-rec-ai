@@ -57,9 +57,19 @@ async def trigger_reel_generation(
         reel = res.data[0]
         reel_id = reel["id"]
         
-        # 3. TRIGGER CELERY TASK (Async Broker Queue)
-        process_reel_generation.delay(str(reel_id))
-        logger.info(f"Dispatched Celery task for reel composition job: {reel_id}")
+        # 3. TRIGGER TASK (Async Broker Queue with thread fallback if Redis is offline)
+        try:
+            process_reel_generation.delay(str(reel_id))
+            logger.info(f"Dispatched Celery task for reel composition job: {reel_id}")
+        except Exception as celery_err:
+            logger.warning(f"Celery dispatch failed ({str(celery_err)}). Falling back to direct thread execution.")
+            import threading
+            threading.Thread(
+                target=process_reel_generation,
+                args=(str(reel_id),),
+                daemon=True
+            ).start()
+            logger.info(f"Direct background thread spawned for reel composition: {reel_id}")
         
         return reel
     except HTTPException:
